@@ -1,85 +1,130 @@
-# 🎮 PolliCross: AI Nonogram Generator
+# 🎮 PolliCross — AI Nonogram Generator
 
-An interactive, web-based **Picross (Nonogram) puzzle game** that generates custom grid levels on-the-fly using AI-generated images from Pollinations.ai. Once you solve the pixel grid puzzle, the high-resolution AI source image is revealed as your reward.
+[![Built with Pollinations](https://img.shields.io/badge/Built%20with-Pollinations-8a2be2?style=for-the-badge)](https://pollinations.ai)
+[![Play now](https://img.shields.io/badge/▶_Play-Live_Demo-00f0ff?style=for-the-badge)](https://zqigolden.github.io/pollicross/)
 
-Built for the **Pollinations App Showcase** submission.
+**PolliCross** turns any idea into a playable [Picross / Nonogram](https://en.wikipedia.org/wiki/Nonogram) puzzle. Type a prompt, pick an art style, and an AI image is generated, distilled into a grid puzzle for you to solve. Crack the grid and the original artwork is revealed as your reward.
 
----
-
-## 🚀 Live Demo & Repository
-*   **Demo URL**: `https://zqigolden.github.io/pollicross/`
-*   **GitHub Repository**: `https://github.com/zqigolden/pollicross`
+🔗 **Play it now: [zqigolden.github.io/pollicross](https://zqigolden.github.io/pollicross/)**
 
 ---
 
-## 🎨 Features
-*   **AI Puzzle Generation**: Input any text prompt (e.g. "Dinosaur", "Spaceship", "Coffee Mug") and choose a style preset (Pixel Art, Neon Silhouette, Flat Vector, Chibi Outline) to generate a unique level.
-*   **Interactive Game Board**: Grid supports left-click painting (to fill cells) and right-click crossing (X marks), along with drag-to-draw mouse gestures and mobile-friendly toggle buttons.
-*   **Complexity-Aware Binarization**: Downscales the high-resolution AI image to `N x N` using HTML5 Canvas, then sweeps multiple thresholds and transforms and selects the candidate that maximises puzzle complexity (row/column run transitions) — producing detailed, recognisable silhouettes instead of large solid blocks.
-*   **Procedural 8-bit Audio**: Synthesizes chiptune background music and sound effects (clicks, crosses, and a victory fanfare) dynamically using the browser's Web Audio API (zero static asset loading).
-*   **Difficulty Tiers**: Supports three board difficulties:
-    *   **Easy**: 5 × 5 grid.
-    *   **Medium**: 10 × 10 grid.
-    *   **Hard**: 15 × 15 grid.
+## 🕹️ How to play
+
+1. **Describe a puzzle** — type anything (`Dinosaur`, `Spaceship`, `Coffee Mug`) or roll the dice for a random prompt.
+2. **Pick an art style** — Pixel Art, Neon Silhouette, Flat Vector, or Cute Outline.
+3. **Choose a difficulty** — Easy (5×5), Medium (10×10), or Hard (15×15).
+4. **Solve the nonogram** — use the row and column number clues to figure out which cells are filled:
+   - **Left-click** a cell to fill it.
+   - **Right-click** to mark a cell with an ✕ (a cell you're sure is empty).
+   - **Click and drag** to paint a straight line of cells.
+   - On touch devices, switch between the **Paint** and **Cross** tools with the buttons above the board.
+5. **Win** — when the grid matches the hidden picture, the AI artwork fades in and expands to reveal the full image. 🎉
+
+No account is required to start playing.
 
 ---
 
-## 🔌 Pollinations.ai Integration (Hybrid)
+## ✨ Features
 
-The app supports two ways to generate:
-
-*   **Guest (no login)**: requests go to the legacy `image.pollinations.ai` host anonymously — free, no account needed, but rate-limited (~1 image/15s) and may include a watermark.
-*   **Connected (BYOP)**: after logging in with a Pollinations account via **Bring Your Own Pollen (BYOP)**, generation runs through the `gen.pollinations.ai` gateway on the player's own balance — faster and watermark-free.
-
-### Authentication flow
-1.  The app sends the user to `https://enter.pollinations.ai/authorize` with its public **App Key** (`client_id=pk_wALQm7skU45vslV8`) and `redirect_uri`.
-2.  The user signs in with their Pollinations account and approves access.
-3.  Pollinations redirects back with a scoped user key in the URL fragment (`#api_key=sk_...`). Fragments never reach servers or logs.
-4.  The app stores that `sk_` key and sends it as an `Authorization: Bearer` header on generation requests.
-
-### Image Generation Endpoint
-`GET https://image.pollinations.ai/prompt/{prompt}?model=flux&width=512&height=512&seed={randomSeed}&nologo=true&key=sk_...`
-The user's authorized `sk_` key is passed as `?key=` (the endpoint also accepts an `Authorization: Bearer` header). The response is fetched as a blob and converted to a same-origin object URL, which keeps the binarization canvas untainted.
-
-*   **App Key**: The publishable `pk_` key only identifies the app on the consent screen and for traffic attribution — it cannot generate beyond a small per-IP limit, so usage is billed to the authenticated user.
-*   **Image Model**: Uses the `flux` model for sharp outlines and high-contrast styling, which facilitates optimal grid conversion.
-
-> **Deploy note:** Register the app's redirect URIs (`https://zqigolden.github.io/pollicross/` and `http://localhost:5173` for local dev) on the App Key at [enter.pollinations.ai](https://enter.pollinations.ai), or the login redirect will be rejected.
+- **AI-generated levels** — every puzzle is built on the fly from a [Pollinations](https://pollinations.ai) `flux` image, so the game never runs out of content.
+- **Faithful puzzles** — the image is auto-cropped to its subject and binarized with Otsu's method, so the solved grid actually looks like the picture (no tiny subjects lost in empty borders, no giant solid blocks).
+- **Satisfying reveal** — solving the grid fades the real artwork in over your solution, then zooms out to show the complete generated image.
+- **Procedural 8-bit audio** — chiptune background music and sound effects are synthesized live with the Web Audio API (no audio files to download).
+- **Play as guest or sign in** — try it instantly without an account, or connect a Pollinations account for faster, watermark-free generation on your own balance (see below).
+- **Mobile-friendly** — works with mouse drag or touch toggles.
 
 ---
 
-## 🛠️ Local Development
+## 🔌 Pollinations integration
 
-### Prerequisites
-*   Node.js (v18 or higher)
-*   npm
+PolliCross uses the [Pollinations](https://pollinations.ai) API for image generation in two modes:
 
-### Setup
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/zqigolden/pollicross.git
-    cd pollicross
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Start the local development server:
-    ```bash
-    npm run dev
-    ```
-    Open `http://localhost:5173` in your browser.
+| Mode | How it works | Trade-offs |
+| --- | --- | --- |
+| **Guest** (default) | Anonymous requests to `image.pollinations.ai`, identified by a `referrer`. | Free, no sign-in — but rate-limited and may include a watermark. |
+| **Connected** (BYOP) | Sign in with a Pollinations account; generation runs through `gen.pollinations.ai` on your own balance. | Faster, watermark-free, no shared rate limit. |
+
+**Bring Your Own Pollen (BYOP)** is Pollinations' user-authorization flow. The app sends you to `enter.pollinations.ai/authorize` with its public App Key (`pk_…`); after you approve, Pollinations returns a short-lived, budget-capped user key (`sk_…`) in the URL fragment, which the app uses as a `Bearer` token. Your key stays in your browser, and you can revoke access anytime from your Pollinations dashboard.
 
 ---
 
-## 📦 Deployment to GitHub Pages
+## 🧩 How it works (for developers)
 
-The project is pre-configured for one-click deployment using `gh-pages`:
+The interesting part is turning a full-color AI image into a solvable, recognizable nonogram:
 
-1.  Build and deploy the application:
-    ```bash
-    npm run deploy
-    ```
-2.  The application will be built and pushed to the `gh-pages` branch, serving dynamically from `https://zqigolden.github.io/pollicross/`.
+1. **Generate** — `flux` produces a 512×512 image, fetched as a blob so the canvas reading it stays same-origin (untainted).
+2. **Locate the subject** — the image is analyzed at low resolution; Otsu's threshold plus a border sample separate the subject from the background and find its bounding box.
+3. **Auto-crop** — the image is cropped to that bounding box (with a small margin and a capped aspect ratio to avoid harsh distortion) and rescaled to fill the grid, so the subject isn't a tiny speck.
+4. **Binarize** — the cropped region is thresholded with Otsu, then a small sweep around the Otsu value picks the threshold that **minimizes trivial rows/columns** (lines that are entirely empty or entirely filled), keeping puzzles interesting while staying faithful to the image.
+5. **Reveal** — on solve, the real image fades in over the grid using the *same crop*, then the success screen animates from that crop out to the full picture.
 
-*(Note: Remember to replace `zqigolden` in `vite.config.js` and this `README.md` if deploying under a different repository base).*
+Core source files:
+
+```
+src/
+├── App.jsx                  # screen flow & state (config → loading → play → success)
+├── components/
+│   ├── ConfigPanel.jsx      # prompt, style preset, difficulty
+│   └── GameGrid.jsx         # interactive board, clues, reveal overlay
+├── logic/
+│   └── picrossLogic.js      # clue generation, win check, prompt presets
+└── utils/
+    ├── pollinationsApi.js   # BYOP auth + guest/connected image generation
+    ├── imageProcessor.js    # Otsu binarization, auto-crop, threshold sweep
+    └── soundManager.js      # Web Audio chiptune music & SFX
+```
+
+**Tech stack:** React 19 · Vite · lucide-react · HTML5 Canvas · Web Audio API · Pollinations API.
+
+---
+
+## 🛠️ Local development
+
+**Prerequisites:** Node.js 18+ and npm.
+
+```bash
+# clone
+git clone https://github.com/zqigolden/pollicross.git
+cd pollicross
+
+# install
+npm install
+
+# run dev server (http://localhost:5173)
+npm run dev
+
+# production build
+npm run build
+
+# preview the production build
+npm run preview
+```
+
+> If you want the **sign-in** flow to work locally or on your own deployment, register your redirect URIs (e.g. `http://localhost:5173/` and your production URL) on the App Key at [enter.pollinations.ai](https://enter.pollinations.ai), and set your own `pk_` key in `src/utils/pollinationsApi.js`. Guest mode works without any of this.
+
+---
+
+## 📦 Deployment (GitHub Pages)
+
+The project is configured for GitHub Pages via the `gh-pages` package. The Vite `base` is set to `/pollicross/` in `vite.config.js` — change it to match your repository name if you fork.
+
+```bash
+npm run deploy   # builds and publishes dist/ to the gh-pages branch
+```
+
+Then enable Pages (serving from the `gh-pages` branch) in your repository settings.
+
+---
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome — bug reports, new art-style presets, better binarization heuristics, accessibility improvements, and UI polish are all appreciated. Please keep changes lint-clean (`npm run lint`).
+
+---
+
+## 🙏 Credits & license
+
+Image generation is powered by [**Pollinations.AI**](https://pollinations.ai), an open generative-AI platform.
+
+Released under the [MIT License](https://opensource.org/licenses/MIT) — free to use, modify, and share.
