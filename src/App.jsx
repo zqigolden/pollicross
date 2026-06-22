@@ -3,7 +3,7 @@ import { Volume2, VolumeX, ArrowLeft, ShieldAlert, LogIn, LogOut } from 'lucide-
 import ConfigPanel from './components/ConfigPanel';
 import GameGrid from './components/GameGrid';
 import { login, logout, isLoggedIn, consumeAuthError, generateImageBlob } from './utils/pollinationsApi';
-import { loadImage, binarizeImage } from './utils/imageProcessor';
+import { loadImage, binarizeImage, cropStyle } from './utils/imageProcessor';
 import { checkWin } from './logic/picrossLogic';
 import soundManager from './utils/soundManager';
 
@@ -17,7 +17,7 @@ export default function App() {
   const [aiImageUrl, setAiImageUrl] = useState('');
   const [answerGrid, setAnswerGrid] = useState([]);
   const [playerGrid, setPlayerGrid] = useState([]);
-  const [puzzleTransform, setPuzzleTransform] = useState({ scale: 1, rotation: 0 });
+  const [puzzleCrop, setPuzzleCrop] = useState(null);
   const [isSolved, setIsSolved] = useState(false);
   const [isMuted, setIsMuted] = useState(() => soundManager.isMuted);
   const [statusMessage, setStatusMessage] = useState('');
@@ -61,10 +61,10 @@ export default function App() {
 
       // 3. Convert image pixels to binary grid
       setStatusMessage('Binarizing image and compiling puzzle rules...');
-      const { grid: binaryMatrix, scale, rotation } = binarizeImage(img, size);
+      const { grid: binaryMatrix, crop } = binarizeImage(img, size);
 
       setAnswerGrid(binaryMatrix);
-      setPuzzleTransform({ scale, rotation });
+      setPuzzleCrop(crop);
       setIsSolved(false);
       // Initialize player grid with 0 (empty)
       setPlayerGrid(Array(size).fill(null).map(() => Array(size).fill(0)));
@@ -231,7 +231,7 @@ export default function App() {
               onCellChange={handleCellChange}
               onCheckWin={handleCheckWin}
               isSolved={isSolved}
-              transform={puzzleTransform}
+              crop={puzzleCrop}
               aiImageUrl={aiImageUrl}
             />
           </div>
@@ -247,7 +247,7 @@ export default function App() {
             </p>
 
             <div className="success-image-frame">
-              <img src={aiImageUrl} alt={promptInfo.rawPrompt} className="success-image" />
+              <img src={aiImageUrl} alt={promptInfo.rawPrompt} className="success-image" style={cropStyle(puzzleCrop)} />
               <span className="success-badge">AI Generated</span>
             </div>
 

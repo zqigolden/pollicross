@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Sparkles, Dice5 } from 'lucide-react';
 import { ART_PRESETS, getRandomPrompt } from '../logic/picrossLogic';
 

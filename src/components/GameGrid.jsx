@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Paintbrush, X, HelpCircle } from 'lucide-react';
 import { generateClues } from '../logic/picrossLogic';
+import { cropStyle } from '../utils/imageProcessor';
 
 // Bresenham's Line Algorithm to interpolate grid cells
 function getCellsOnLine(r0, c0, r1, c1) {
@@ -30,7 +31,7 @@ function getCellsOnLine(r0, c0, r1, c1) {
   return cells;
 }
 
-export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, onCheckWin, isSolved, transform, aiImageUrl }) {
+export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, onCheckWin, isSolved, crop, aiImageUrl }) {
   const [activeTool, setActiveTool] = useState('paint'); // 'paint' or 'cross'
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawType, setDrawType] = useState(null); // The state we are writing (0, 1, or -1)
@@ -41,39 +42,15 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
   const rowClues = generateClues(answerGrid, false);
   const colClues = generateClues(answerGrid, true);
 
-  // Keep track of solved rows and columns for visual feedback
-  const [solvedRows, setSolvedRows] = useState(Array(size).fill(false));
-  const [solvedCols, setSolvedCols] = useState(Array(size).fill(false));
-
-  useEffect(() => {
-    checkLineCompletion();
-  }, [playerGrid]);
-
-  // Checks which rows/columns match the target grid perfectly to gray out clues
-  const checkLineCompletion = () => {
-    const rows = Array(size).fill(true);
-    const cols = Array(size).fill(true);
-
-    for (let i = 0; i < size; i++) {
-      for (let j = 0; j < size; j++) {
-        // For rows: player row i, col j vs answer row i, col j
-        const playerRowFilled = playerGrid[i][j] === 1;
-        const answerRowFilled = answerGrid[i][j] === 1;
-        if (playerRowFilled !== answerRowFilled) {
-          rows[i] = false;
-        }
-
-        // For cols: player row j, col i vs answer row j, col i
-        const playerColFilled = playerGrid[j][i] === 1;
-        const answerColFilled = answerGrid[j][i] === 1;
-        if (playerColFilled !== answerColFilled) {
-          cols[i] = false;
-        }
-      }
+  // Derived: which rows/columns match the target grid perfectly (to gray out clues)
+  const solvedRows = Array(size).fill(true);
+  const solvedCols = Array(size).fill(true);
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      if ((playerGrid[i][j] === 1) !== (answerGrid[i][j] === 1)) solvedRows[i] = false;
+      if ((playerGrid[j][i] === 1) !== (answerGrid[j][i] === 1)) solvedCols[i] = false;
     }
-    setSolvedRows(rows);
-    setSolvedCols(cols);
-  };
+  }
 
   // Drag-to-draw mouse handlers
   const handleCellMouseDown = (r, c, e) => {
@@ -89,7 +66,7 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
     }
 
     const currentVal = playerGrid[r][c];
-    let nextVal = 0;
+    let nextVal;
 
     if (clickTool === 'paint') {
       nextVal = currentVal === 1 ? 0 : 1;
@@ -280,11 +257,10 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
           </React.Fragment>
         ))}
 
-        {/* Solved reveal: fade the real AI image in over the cell area */}
+        {/* Solved reveal: fade the real AI image in over the cell area, using
+            the same crop as the puzzle so the picture lines up with the grid. */}
         {isSolved && aiImageUrl && (
-          <img
-            src={aiImageUrl}
-            alt="Solved puzzle reveal"
+          <div
             className="reveal-overlay"
             style={{
               position: 'absolute',
@@ -292,14 +268,12 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
               left: `calc(1rem + ${clueSize})`,
               width: `calc(${cellSize} * ${size})`,
               height: `calc(${cellSize} * ${size})`,
-              objectFit: 'cover',
+              overflow: 'hidden',
               pointerEvents: 'none',
-              transform:
-                transform && (transform.scale !== 1 || transform.rotation !== 0)
-                  ? `rotate(${transform.rotation}rad) scale(${transform.scale})`
-                  : undefined,
             }}
-          />
+          >
+            <img src={aiImageUrl} alt="Solved puzzle reveal" style={cropStyle(crop)} />
+          </div>
         )}
       </div>
 

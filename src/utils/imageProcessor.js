@@ -1,11 +1,22 @@
 /**
  * Image processing utilities to convert generated images into Picross grids.
  *
- * Goal: the solved grid should clearly resemble the revealed image. We draw the
- * full image into an N x N square (no scale/rotation jitter, so the grid aligns
- * 1:1 with the reveal overlay) and binarize with Otsu's method — the standard
- * threshold that best separates subject from background the way the eye does.
+ * Pipeline:
+ *  1. Analyse the full image to find the subject (Otsu threshold + a border
+ *     sample to tell subject from background).
+ *  2. Auto-crop to the subject's bounding box (small margin, capped aspect
+ *     ratio) and rescale so the subject fills the grid — no tiny subject lost
+ *     in empty borders.
+ *  3. Binarize the cropped region into the N x N grid.
+ *
+ * The same crop is applied to the revealed image so the picture lines up with
+ * the solved grid.
  */
+
+const ANALYSIS = 100;     // resolution for subject detection
+const MARGIN = 0.06;      // crop padding, fraction of analysis size
+const MAX_ASPECT = 1.7;   // cap stretch so the subject isn't badly distorted
+const INVERT_ABOVE = 0.62; // if full-frame fill exceeds this, flip subject side
 
 /**
  * Loads an image from a URL and resolves with the HTMLImageElement.
@@ -15,28 +26,20 @@
 export function loadImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous'; // harmless for blob: URLs, needed for remote URLs
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error('Failed to load generated AI image. Please retry.'));
     img.src = url;
   });
 }
 
-/**
- * Otsu's method: finds the grayscale threshold that maximises between-class
- * variance (best separation of foreground vs background).
- * @param {number[]} values - grayscale samples in [0, 255]
- * @returns {number} threshold in [0, 255]
- */
+/** Otsu threshold (0-255) maximising between-class variance. */
 function otsuThreshold(values) {
   const hist = new Array(256).fill(0);
-  for (const v of values) {
-    hist[Math.max(0, Math.min(255, Math.round(v)))]++;
-  }
+  for (const v of values) hist[Math.max(0, Math.min(255, Math.round(v)))]++;
   const total = values.length;
   let sumAll = 0;
   for (let i = 0; i < 256; i++) sumAll += i * hist[i];
-
   let sumB = 0;
   let wB = 0;
   let maxVar = -1;
@@ -58,94 +61,161 @@ function otsuThreshold(values) {
   return threshold;
 }
 
-/**
- * Downscales an image to N x N and binarizes it into 0/1 cells that resemble
- * the source image.
- *
- * @param {HTMLImageElement} img
- * @param {number} size - Target grid size (5, 10, or 15)
- * @returns {{ grid: number[][], scale: number, rotation: number }}
- */
-export function binarizeImage(img, size) {
+/** Draws (a region of) the image into an w x h canvas and returns grayscale + alpha grids. */
+function sample(img, w, h, src) {
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
-
-  // Fill the whole square with the image. Source images are square (512x512),
-  // so this matches the `object-fit: cover` framing used when the image is
-  // revealed — the grid lines up with the picture exactly.
-  if (ctx) {
-    ctx.drawImage(img, 0, 0, size, size);
+  if (!ctx) return null;
+  if (src) {
+    ctx.drawImage(img, src.sx, src.sy, src.sw, src.sh, 0, 0, w, h);
+  } else {
+    ctx.drawImage(img, 0, 0, w, h);
   }
-  const empty = () => ({ grid: Array.from({ length: size }, () => Array(size).fill(0)), scale: 1, rotation: 0 });
-  if (!ctx) return empty();
-
-  const { data } = ctx.getImageData(0, 0, size, size);
-
-  const grayGrid = [];
-  const alphaGrid = [];
-  const validGrays = [];
-  for (let r = 0; r < size; r++) {
+  const { data } = ctx.getImageData(0, 0, w, h);
+  const gray = [];
+  const alpha = [];
+  const valid = [];
+  for (let r = 0; r < h; r++) {
     const gRow = [];
     const aRow = [];
-    for (let c = 0; c < size; c++) {
-      const idx = (r * size + c) * 4;
-      const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-      const alpha = data[idx + 3];
-      gRow.push(gray);
-      aRow.push(alpha);
-      if (alpha >= 50) validGrays.push(gray);
+    for (let c = 0; c < w; c++) {
+      const idx = (r * w + c) * 4;
+      const g = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      const a = data[idx + 3];
+      gRow.push(g);
+      aRow.push(a);
+      if (a >= 50) valid.push(g);
     }
-    grayGrid.push(gRow);
-    alphaGrid.push(aRow);
+    gray.push(gRow);
+    alpha.push(aRow);
   }
+  return { gray, alpha, valid };
+}
 
-  if (validGrays.length === 0) return empty();
-
-  const threshold = otsuThreshold(validGrays);
-
-  // Decide which side of the threshold is the subject: sample the border, which
-  // is almost always background. The subject is the opposite (non-background) side.
-  let borderSum = 0;
-  let borderCount = 0;
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if ((r === 0 || r === size - 1 || c === 0 || c === size - 1) && alphaGrid[r][c] >= 50) {
-        borderSum += grayGrid[r][c];
-        borderCount++;
+/** Border-based background brightness (transparent pixels ignored). */
+function backgroundBrightness(gray, alpha, fallback) {
+  const h = gray.length;
+  const w = gray[0].length;
+  let sum = 0;
+  let count = 0;
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if ((r === 0 || r === h - 1 || c === 0 || c === w - 1) && alpha[r][c] >= 50) {
+        sum += gray[r][c];
+        count++;
       }
     }
   }
-  const avg = validGrays.reduce((a, b) => a + b, 0) / validGrays.length;
-  const backgroundBrightness = borderCount > 0 ? borderSum / borderCount : avg;
-  const isLightBackground = backgroundBrightness > threshold;
+  return count > 0 ? sum / count : fallback;
+}
 
-  const buildGrid = (subjectIsDark) => {
-    const grid = [];
-    let filled = 0;
-    for (let r = 0; r < size; r++) {
-      const row = [];
-      for (let c = 0; c < size; c++) {
-        const transparent = alphaGrid[r][c] < 50;
-        const fg = !transparent && (subjectIsDark ? grayGrid[r][c] < threshold : grayGrid[r][c] >= threshold);
-        if (fg) filled++;
-        row.push(fg ? 1 : 0);
-      }
-      grid.push(row);
+/** Builds a 0/1 mask: subject = darker (or lighter) than threshold. */
+function mask(gray, alpha, threshold, subjectIsDark) {
+  const h = gray.length;
+  const w = gray[0].length;
+  const m = [];
+  let filled = 0;
+  for (let r = 0; r < h; r++) {
+    const row = [];
+    for (let c = 0; c < w; c++) {
+      const transparent = alpha[r][c] < 50;
+      const fg = !transparent && (subjectIsDark ? gray[r][c] < threshold : gray[r][c] >= threshold);
+      if (fg) filled++;
+      row.push(fg ? 1 : 0);
     }
-    return { grid, fillRatio: filled / (size * size) };
+    m.push(row);
+  }
+  return { m, fillRatio: filled / (w * h) };
+}
+
+/**
+ * Downscales + auto-crops + binarizes an image into an N x N grid.
+ *
+ * @param {HTMLImageElement} img
+ * @param {number} size - grid size (5, 10, 15)
+ * @returns {{ grid: number[][], crop: {x:number,y:number,w:number,h:number} }}
+ *          crop is normalised [0,1] coordinates into the source image.
+ */
+export function binarizeImage(img, size) {
+  const fullCrop = { x: 0, y: 0, w: 1, h: 1 };
+  const emptyGrid = () => Array.from({ length: size }, () => Array(size).fill(0));
+
+  // --- Pass A: analyse full frame to locate the subject ---
+  const a = sample(img, ANALYSIS, ANALYSIS, null);
+  if (!a || a.valid.length === 0) return { grid: emptyGrid(), crop: fullCrop };
+
+  const thA = otsuThreshold(a.valid);
+  const bgA = backgroundBrightness(a.gray, a.alpha, a.valid.reduce((s, v) => s + v, 0) / a.valid.length);
+  let subjectIsDark = bgA > thA; // subject is the side away from background
+  let { m } = mask(a.gray, a.alpha, thA, subjectIsDark);
+
+  // If the "subject" covers most of the frame, background detection probably
+  // flipped — invert so we track the actual subject silhouette.
+  let fillA = m.flat().reduce((s, v) => s + v, 0) / (ANALYSIS * ANALYSIS);
+  if (fillA > INVERT_ABOVE) {
+    subjectIsDark = !subjectIsDark;
+    ({ m } = mask(a.gray, a.alpha, thA, subjectIsDark));
+    fillA = m.flat().reduce((s, v) => s + v, 0) / (ANALYSIS * ANALYSIS);
+  }
+
+  // Bounding box of the subject.
+  let minR = ANALYSIS, minC = ANALYSIS, maxR = -1, maxC = -1;
+  for (let r = 0; r < ANALYSIS; r++) {
+    for (let c = 0; c < ANALYSIS; c++) {
+      if (m[r][c]) {
+        if (r < minR) minR = r;
+        if (r > maxR) maxR = r;
+        if (c < minC) minC = c;
+        if (c > maxC) maxC = c;
+      }
+    }
+  }
+
+  let crop = fullCrop;
+  if (maxR >= 0 && fillA < 0.95) {
+    const pad = Math.round(MARGIN * ANALYSIS);
+    let x0 = Math.max(0, minC - pad);
+    let y0 = Math.max(0, minR - pad);
+    let x1 = Math.min(ANALYSIS - 1, maxC + pad);
+    let y1 = Math.min(ANALYSIS - 1, maxR + pad);
+    let cw = x1 - x0 + 1;
+    let ch = y1 - y0 + 1;
+
+    // Cap the aspect ratio by widening the shorter side (centered, clamped).
+    if (cw / ch > MAX_ASPECT) {
+      const target = Math.min(ANALYSIS, Math.round(cw / MAX_ASPECT));
+      const extra = target - ch;
+      y0 = Math.max(0, y0 - Math.floor(extra / 2));
+      y1 = Math.min(ANALYSIS - 1, y0 + target - 1);
+      y0 = Math.max(0, y1 - target + 1);
+    } else if (ch / cw > MAX_ASPECT) {
+      const target = Math.min(ANALYSIS, Math.round(ch / MAX_ASPECT));
+      const extra = target - cw;
+      x0 = Math.max(0, x0 - Math.floor(extra / 2));
+      x1 = Math.min(ANALYSIS - 1, x0 + target - 1);
+      x0 = Math.max(0, x1 - target + 1);
+    }
+    cw = x1 - x0 + 1;
+    ch = y1 - y0 + 1;
+    crop = { x: x0 / ANALYSIS, y: y0 / ANALYSIS, w: cw / ANALYSIS, h: ch / ANALYSIS };
+  }
+
+  // --- Pass B: binarize the cropped region into the final grid ---
+  const srcW = img.naturalWidth || img.width || ANALYSIS;
+  const srcH = img.naturalHeight || img.height || ANALYSIS;
+  const src = {
+    sx: crop.x * srcW,
+    sy: crop.y * srcH,
+    sw: crop.w * srcW,
+    sh: crop.h * srcH,
   };
+  const b = sample(img, size, size, crop === fullCrop ? null : src);
+  if (!b || b.valid.length === 0) return { grid: emptyGrid(), crop };
 
-  // Subject is the non-background side.
-  let { grid, fillRatio } = buildGrid(isLightBackground);
-
-  // Safety net: the subject is normally the minority of cells. If more than ~62%
-  // is filled, background detection likely flipped — invert so we paint the
-  // subject silhouette rather than a giant block.
-  if (fillRatio > 0.62) {
-    ({ grid, fillRatio } = buildGrid(!isLightBackground));
-  }
+  const thB = otsuThreshold(b.valid);
+  const { m: grid, fillRatio } = mask(b.gray, b.alpha, thB, subjectIsDark);
 
   // Guard against degenerate all-empty / all-filled boards.
   if (fillRatio === 0) {
@@ -157,5 +227,22 @@ export function binarizeImage(img, size) {
     grid[size - 1][size - 1] = 0;
   }
 
-  return { grid, scale: 1, rotation: 0 };
+  return { grid, crop };
+}
+
+/**
+ * Inline style that displays the given normalised crop region of an image,
+ * stretched to fill its (clipping, position:relative) container.
+ * @param {{x:number,y:number,w:number,h:number}} crop
+ */
+export function cropStyle(crop) {
+  if (!crop) return {};
+  return {
+    position: 'absolute',
+    width: `${100 / crop.w}%`,
+    height: `${100 / crop.h}%`,
+    left: `${(-crop.x * 100) / crop.w}%`,
+    top: `${(-crop.y * 100) / crop.h}%`,
+    maxWidth: 'none',
+  };
 }
