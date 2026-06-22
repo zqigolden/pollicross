@@ -42,15 +42,14 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
   const rowClues = generateClues(answerGrid, false);
   const colClues = generateClues(answerGrid, true);
 
-  // Derived: which rows/columns match the target grid perfectly (to gray out clues)
-  const solvedRows = Array(size).fill(true);
-  const solvedCols = Array(size).fill(true);
-  for (let i = 0; i < size; i++) {
-    for (let j = 0; j < size; j++) {
-      if ((playerGrid[i][j] === 1) !== (answerGrid[i][j] === 1)) solvedRows[i] = false;
-      if ((playerGrid[j][i] === 1) !== (answerGrid[j][i] === 1)) solvedCols[i] = false;
-    }
-  }
+  // Derived: gray out a clue once the player's filled runs in that line match
+  // the clue numbers (i.e. the clue is satisfied), regardless of whether it
+  // matches the hidden solution exactly.
+  const playerRowClues = generateClues(playerGrid, false);
+  const playerColClues = generateClues(playerGrid, true);
+  const cluesEqual = (a, b) => a.length === b.length && a.every((n, k) => n === b[k]);
+  const solvedRows = rowClues.map((clue, i) => cluesEqual(playerRowClues[i], clue));
+  const solvedCols = colClues.map((clue, i) => cluesEqual(playerColClues[i], clue));
 
   // Drag-to-draw mouse handlers
   const handleCellMouseDown = (r, c, e) => {
