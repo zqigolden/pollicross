@@ -19,6 +19,7 @@ export default function App() {
   const [playerGrid, setPlayerGrid] = useState([]);
   const [puzzleCrop, setPuzzleCrop] = useState(null);
   const [isSolved, setIsSolved] = useState(false);
+  const [revealFull, setRevealFull] = useState(false); // success screen: zoomed out to full image?
   const [isMuted, setIsMuted] = useState(() => soundManager.isMuted);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState(null);
@@ -42,6 +43,7 @@ export default function App() {
   const handleGenerate = async ({ rawPrompt, fullPrompt, size }) => {
     setGameState('loading');
     setError(null);
+    setRevealFull(false);
     setPromptInfo({ rawPrompt, fullPrompt, size });
     setStatusMessage('Generating AI image on your Pollinations balance...');
 
@@ -111,10 +113,15 @@ export default function App() {
       setIsSolved(true);
       soundManager.playVictory();
       soundManager.stopMusic();
-      
-      // Delay transition to success screen to show alignment animation
+
+      // Delay transition to success screen to show the in-board reveal first.
       setTimeout(() => {
+        setRevealFull(false); // start framed on the solved crop...
         setGameState('success');
+        // ...then, once committed, zoom out to the full generated image.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => setRevealFull(true))
+        );
       }, 2500);
     }
   };
@@ -247,7 +254,18 @@ export default function App() {
             </p>
 
             <div className="success-image-frame">
-              <img src={aiImageUrl} alt={promptInfo.rawPrompt} className="success-image" style={cropStyle(puzzleCrop)} />
+              <img
+                src={aiImageUrl}
+                alt={promptInfo.rawPrompt}
+                className="success-image"
+                style={{
+                  ...(revealFull
+                    ? { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', maxWidth: 'none', objectFit: 'cover' }
+                    : cropStyle(puzzleCrop)),
+                  animation: 'none',
+                  transition: 'top 0.9s cubic-bezier(0.16, 1, 0.3, 1), left 0.9s cubic-bezier(0.16, 1, 0.3, 1), width 0.9s cubic-bezier(0.16, 1, 0.3, 1), height 0.9s cubic-bezier(0.16, 1, 0.3, 1)',
+                }}
+              />
               <span className="success-badge">AI Generated</span>
             </div>
 
