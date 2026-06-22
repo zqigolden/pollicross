@@ -7,8 +7,8 @@ Built for the **Pollinations App Showcase** submission.
 ---
 
 ## 🚀 Live Demo & Repository
-*   **Demo URL**: `https://zqigolden.github.io/amazing-shannon/`
-*   **GitHub Repository**: `https://github.com/zqigolden/amazing-shannon`
+*   **Demo URL**: `https://zqigolden.github.io/pollicross/`
+*   **GitHub Repository**: `https://github.com/zqigolden/pollicross`
 
 ---
 
@@ -44,7 +44,7 @@ The user's authorized `sk_` key is passed as `?key=` (the endpoint also accepts 
 *   **App Key**: The publishable `pk_` key only identifies the app on the consent screen and for traffic attribution — it cannot generate beyond a small per-IP limit, so usage is billed to the authenticated user.
 *   **Image Model**: Uses the `flux` model for sharp outlines and high-contrast styling, which facilitates optimal grid conversion.
 
-> **Deploy note:** Register the app's redirect URIs (`https://zqigolden.github.io/amazing-shannon/` and `http://localhost:5173` for local dev) on the App Key at [enter.pollinations.ai](https://enter.pollinations.ai), or the login redirect will be rejected.
+> **Deploy note:** Register the app's redirect URIs (`https://zqigolden.github.io/pollicross/` and `http://localhost:5173` for local dev) on the App Key at [enter.pollinations.ai](https://enter.pollinations.ai), or the login redirect will be rejected.
 
 ---
 
@@ -57,8 +57,8 @@ The user's authorized `sk_` key is passed as `?key=` (the endpoint also accepts 
 ### Setup
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/zqigolden/amazing-shannon.git
-    cd amazing-shannon
+    git clone https://github.com/zqigolden/pollicross.git
+    cd pollicross
     ```
 2.  Install dependencies:
     ```bash
@@ -80,6 +80,6 @@ The project is pre-configured for one-click deployment using `gh-pages`:
     ```bash
     npm run deploy
     ```
-2.  The application will be built and pushed to the `gh-pages` branch, serving dynamically from `https://zqigolden.github.io/amazing-shannon/`.
+2.  The application will be built and pushed to the `gh-pages` branch, serving dynamically from `https://zqigolden.github.io/pollicross/`.
 
 *(Note: Remember to replace `zqigolden` in `vite.config.js` and this `README.md` if deploying under a different repository base).*
