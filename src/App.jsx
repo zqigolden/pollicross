@@ -1,0 +1,276 @@
+import { useState } from 'react';
+import { Volume2, VolumeX, ArrowLeft, ShieldAlert, LogIn, LogOut } from 'lucide-react';
+import ConfigPanel from './components/ConfigPanel';
+import GameGrid from './components/GameGrid';
+import { login, logout, isLoggedIn, consumeAuthError, generateImageBlob } from './utils/pollinationsApi';
+import { loadImage, binarizeImage } from './utils/imageProcessor';
+import { checkWin } from './logic/picrossLogic';
+import soundManager from './utils/soundManager';
+
+export default function App() {
+  const [gameState, setGameState] = useState('config'); // 'config' | 'loading' | 'playing' | 'success'
+  const [authed, setAuthed] = useState(() => isLoggedIn());
+  const [authNotice, setAuthNotice] = useState(() =>
+    consumeAuthError() ? 'Authorization was cancelled. Connect your account to start playing.' : null
+  );
+  const [promptInfo, setPromptInfo] = useState(null);
+  const [aiImageUrl, setAiImageUrl] = useState('');
+  const [answerGrid, setAnswerGrid] = useState([]);
+  const [playerGrid, setPlayerGrid] = useState([]);
+  const [puzzleTransform, setPuzzleTransform] = useState({ scale: 1, rotation: 0 });
+  const [isSolved, setIsSolved] = useState(false);
+  const [isMuted, setIsMuted] = useState(() => soundManager.isMuted);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [error, setError] = useState(null);
+
+  const handleToggleMute = () => {
+    const nextMuted = soundManager.toggleMute();
+    setIsMuted(nextMuted);
+  };
+
+  const handleLogin = () => {
+    setAuthNotice(null);
+    login(); // redirects away
+  };
+
+  const handleLogout = () => {
+    logout();
+    setAuthed(false);
+    setAuthNotice(null);
+  };
+
+  const handleGenerate = async ({ rawPrompt, fullPrompt, size }) => {
+    setGameState('loading');
+    setError(null);
+    setPromptInfo({ rawPrompt, fullPrompt, size });
+    setStatusMessage('Generating AI image on your Pollinations balance...');
+
+    // Release any previous puzzle image before creating a new one.
+    if (aiImageUrl && aiImageUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(aiImageUrl);
+    }
+
+    try {
+      // 1. Generate the image with the user's authorized key (returns a blob URL)
+      const imageUrl = await generateImageBlob(fullPrompt);
+      setAiImageUrl(imageUrl);
+
+      // 2. Pre-load the image so we can read its pixels
+      setStatusMessage('Awaiting AI generation response...');
+      const img = await loadImage(imageUrl);
+
+      // 3. Convert image pixels to binary grid
+      setStatusMessage('Binarizing image and compiling puzzle rules...');
+      const { grid: binaryMatrix, scale, rotation } = binarizeImage(img, size);
+
+      setAnswerGrid(binaryMatrix);
+      setPuzzleTransform({ scale, rotation });
+      setIsSolved(false);
+      // Initialize player grid with 0 (empty)
+      setPlayerGrid(Array(size).fill(null).map(() => Array(size).fill(0)));
+
+      // 4. Play game
+      setGameState('playing');
+      if (!soundManager.isMuted) {
+        soundManager.startMusic();
+      }
+    } catch (err) {
+      console.error(err);
+      if (err.message === 'SESSION_EXPIRED') {
+        setAuthed(false);
+        setAuthNotice('Your Pollinations session expired — switched to guest mode. Generate again, or reconnect your account.');
+      } else {
+        setError(err.message || 'An unexpected error occurred. Please try again.');
+      }
+      setGameState('config');
+    }
+  };
+
+  const handleCellChange = (r, c, val) => {
+    setPlayerGrid(prevGrid => {
+      // Check if state is actually changing to prevent redundant sound plays
+      if (prevGrid[r][c] === val) return prevGrid;
+
+      // Play click sounds based on the tool used
+      if (val === 1) soundManager.playClick();
+      else if (val === -1) soundManager.playCross();
+
+      return prevGrid.map((row, rowIndex) => 
+        row.map((cell, colIndex) => {
+          if (rowIndex === r && colIndex === c) {
+            return val;
+          }
+          return cell;
+        })
+      );
+    });
+  };
+
+  const handleCheckWin = () => {
+    if (checkWin(playerGrid, answerGrid)) {
+      setIsSolved(true);
+      soundManager.playVictory();
+      soundManager.stopMusic();
+      
+      // Delay transition to success screen to show alignment animation
+      setTimeout(() => {
+        setGameState('success');
+      }, 2500);
+    }
+  };
+
+  const handleQuitGame = () => {
+    soundManager.stopMusic();
+    setIsSolved(false);
+    setGameState('config');
+  };
+
+  // Render sub-screens based on state
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '2rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+        {gameState === 'config' && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem', width: '100%' }}>
+            <ConfigPanel onGenerate={handleGenerate} />
+
+            {authed ? (
+              <button
+                className="icon-btn"
+                onClick={handleLogout}
+                title="Disconnect Pollinations account"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: 'auto', padding: '0.5rem 1rem', fontSize: '0.75rem' }}
+              >
+                <LogOut size={14} />
+                Connected &middot; Disconnect
+              </button>
+            ) : (
+              <div className="glass-panel" style={{ maxWidth: '500px', width: '100%', textAlign: 'center', padding: '1rem' }}>
+                <p style={{ fontSize: '0.8rem', margin: '0 0 0.75rem 0', opacity: 0.85 }}>
+                  Playing as guest &mdash; free but rate-limited and may include a watermark.
+                  Connect your Pollinations account for faster, watermark-free puzzles on your own balance.
+                </p>
+                <button
+                  className="icon-btn"
+                  onClick={handleLogin}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', width: 'auto', padding: '0.5rem 1rem', fontSize: '0.75rem' }}
+                >
+                  <LogIn size={14} />
+                  Connect Pollinations Account
+                </button>
+              </div>
+            )}
+
+            {authNotice && (
+              <div style={{ color: 'var(--secondary-color)', fontSize: '0.8rem', opacity: 0.9, maxWidth: '500px', textAlign: 'center' }}>
+                {authNotice}
+              </div>
+            )}
+
+            {error && (
+              <div className="glass-panel" style={{ 
+                borderColor: 'var(--secondary-color)', 
+                color: 'var(--secondary-color)',
+                maxWidth: '500px', 
+                width: '100%', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '1rem',
+                padding: '1rem' 
+              }}>
+                <ShieldAlert size={24} />
+                <div>
+                  <strong style={{ display: 'block', fontSize: '0.85rem' }}>Failed to generate puzzle</strong>
+                  <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>{error}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {gameState === 'loading' && (
+          <div className="glass-panel loader-container" style={{ maxWidth: '500px', width: '100%' }}>
+            <div className="loader-spinner" />
+            <div className="loader-status">CREATING PUZZLE...</div>
+            <p style={{ fontSize: '0.85rem' }}>{statusMessage}</p>
+          </div>
+        )}
+
+        {gameState === 'playing' && (
+          <div className="game-container">
+            <div className="game-header">
+              <div className="game-title-bar">
+                <h1>POLLICROSS</h1>
+                <div className="game-prompt-display">
+                  Subject: {promptInfo.rawPrompt} ({promptInfo.size}x{promptInfo.size})
+                </div>
+              </div>
+              
+              <div className="game-controls">
+                <button 
+                  className="icon-btn" 
+                  onClick={handleToggleMute}
+                  title={isMuted ? 'Unmute Sound & Music' : 'Mute Sound & Music'}
+                >
+                  {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                </button>
+                
+                <button 
+                  className="icon-btn" 
+                  onClick={handleQuitGame}
+                  title="Return to Menu"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+              </div>
+            </div>
+
+            <GameGrid
+              size={promptInfo.size}
+              playerGrid={playerGrid}
+              answerGrid={answerGrid}
+              onCellChange={handleCellChange}
+              onCheckWin={handleCheckWin}
+              isSolved={isSolved}
+              transform={puzzleTransform}
+              aiImageUrl={aiImageUrl}
+            />
+          </div>
+        )}
+
+        {gameState === 'success' && (
+          <div className="glass-panel success-screen">
+            <h1 style={{ color: 'var(--accent-color)', textShadow: '0 0 10px rgba(232, 243, 114, 0.4)' }}>
+              LEVEL CLEARED!
+            </h1>
+            <p style={{ margin: '0.5rem 0 1.5rem 0' }}>
+              You solved the Nonogram for: <strong style={{ color: '#fff' }}>{promptInfo.rawPrompt}</strong>
+            </p>
+
+            <div className="success-image-frame">
+              <img src={aiImageUrl} alt={promptInfo.rawPrompt} className="success-image" />
+              <span className="success-badge">AI Generated</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
+              <button 
+                className="btn-neon btn-neon-magenta" 
+                onClick={handleQuitGame}
+              >
+                Play Again
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <footer className="footer-credits">
+        <a href="https://pollinations.ai" target="_blank" rel="noopener noreferrer">
+          <img 
+            src="https://img.shields.io/badge/Built%20with-Pollinations-8a2be2?style=for-the-badge" 
+            alt="Built with Pollinations.ai" 
+          />
+        </a>
+      </footer>
+    </div>
+  );
+}
