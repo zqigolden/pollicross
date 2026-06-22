@@ -91,7 +91,7 @@ export function captureKeyFromHash() {
 }
 
 /** The stored user key, or null if not logged in. */
-export function getStoredKey() {
+function getStoredKey() {
   try {
     return localStorage.getItem(STORAGE_KEY);
   } catch {
