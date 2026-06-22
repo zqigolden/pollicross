@@ -171,15 +171,15 @@ export async function generateImageBlob(prompt) {
     logout(); // expired/invalid key — drop it so the next attempt runs as guest
     throw new Error('SESSION_EXPIRED');
   }
+  if (!key && (res.status === 403 || res.status === 429)) {
+    // Guest ran into the anonymous generation limit — recommend signing in.
+    throw new Error('You may have reached the guest generation limit. Connect your Pollinations account to keep generating on your own balance.');
+  }
   if (res.status === 402) {
     throw new Error('Your Pollinations balance is empty. Top up your account to keep generating.');
   }
   if (res.status === 429) {
-    throw new Error(
-      key
-        ? 'Pollinations is rate limiting requests. Wait a few seconds and try again.'
-        : 'Guest mode is rate-limited. Wait a moment and try again, or connect your Pollinations account to generate freely on your own balance.'
-    );
+    throw new Error('Pollinations is rate limiting requests. Wait a few seconds and try again.');
   }
   if (!res.ok) {
     throw new Error(`Image generation failed (HTTP ${res.status}). Please retry.`);
