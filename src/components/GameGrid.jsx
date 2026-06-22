@@ -30,7 +30,7 @@ function getCellsOnLine(r0, c0, r1, c1) {
   return cells;
 }
 
-export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, onCheckWin }) {
+export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, onCheckWin, isSolved, transform, aiImageUrl }) {
   const [activeTool, setActiveTool] = useState('paint'); // 'paint' or 'cross'
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawType, setDrawType] = useState(null); // The state we are writing (0, 1, or -1)
@@ -196,10 +196,11 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
       </div>
 
       {/* Board wrapper */}
-      <div 
-        className="picross-board" 
+      <div
+        className="picross-board"
         onContextMenu={handleContextMenu}
         style={{
+          position: 'relative',
           gridTemplateColumns: `${clueSize} repeat(${size}, ${cellSize})`,
           gridTemplateRows: `${clueSize} repeat(${size}, ${cellSize})`
         }}
@@ -278,6 +279,28 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
             })}
           </React.Fragment>
         ))}
+
+        {/* Solved reveal: fade the real AI image in over the cell area */}
+        {isSolved && aiImageUrl && (
+          <img
+            src={aiImageUrl}
+            alt="Solved puzzle reveal"
+            className="reveal-overlay"
+            style={{
+              position: 'absolute',
+              top: `calc(1rem + ${clueSize})`,
+              left: `calc(1rem + ${clueSize})`,
+              width: `calc(${cellSize} * ${size})`,
+              height: `calc(${cellSize} * ${size})`,
+              objectFit: 'cover',
+              pointerEvents: 'none',
+              transform:
+                transform && (transform.scale !== 1 || transform.rotation !== 0)
+                  ? `rotate(${transform.rotation}rad) scale(${transform.scale})`
+                  : undefined,
+            }}
+          />
+        )}
       </div>
 
       <div className="info-row" style={{ marginTop: '1.2rem', width: '100%', maxWidth: '400px' }}>
