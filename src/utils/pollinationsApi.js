@@ -119,14 +119,15 @@ export function logout() {
  * - Guest: hits the legacy image.pollinations.ai host anonymously (no key) — free
  *   but rate-limited and possibly watermarked.
  *
- * Either way we fetch it (not a bare <img src>) and return a blob object URL, so
- * the canvas that reads it during binarization is same-origin and never tainted.
+ * Either way we fetch it (not a bare <img src>) and return a data URL, so the
+ * canvas that reads it during binarization is same-origin (never tainted) and
+ * the image can be cached in localStorage to resume an unfinished game.
  *
  * @param {string} prompt - The full image prompt
- * @returns {Promise<string>} An object URL for the generated image
+ * @returns {Promise<string>} A data URL for the generated image
  * @throws {Error} with code-like message 'SESSION_EXPIRED' or a user-facing message
  */
-export async function generateImageBlob(prompt) {
+export async function generateImage(prompt) {
   const key = getStoredKey();
   const encodedPrompt = encodeURIComponent(prompt);
   const seed = Math.floor(Math.random() * 1000000);
@@ -188,5 +189,15 @@ export async function generateImageBlob(prompt) {
   if (!blob.type.startsWith('image/')) {
     throw new Error('Pollinations did not return an image. Please retry.');
   }
-  return URL.createObjectURL(blob);
+  return blobToDataUrl(blob);
+}
+
+/** Reads a Blob into a base64 data URL (persistable, same-origin). */
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Failed to read the generated image.'));
+    reader.readAsDataURL(blob);
+  });
 }

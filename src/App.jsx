@@ -2,30 +2,34 @@ import { useState, useEffect } from 'react';
 import { Volume2, VolumeX, ArrowLeft, ShieldAlert, LogIn, LogOut, Clock } from 'lucide-react';
 import ConfigPanel from './components/ConfigPanel';
 import GameGrid from './components/GameGrid';
-import { login, logout, isLoggedIn, consumeAuthError, generateImageBlob } from './utils/pollinationsApi';
+import { login, logout, isLoggedIn, consumeAuthError, generateImage } from './utils/pollinationsApi';
 import { loadImage, binarizeImage, cropStyle } from './utils/imageProcessor';
 import { checkWin } from './logic/picrossLogic';
+import { saveMeta, saveImage, loadGame, clearGame } from './utils/gameCache';
 import soundManager from './utils/soundManager';
 
 const formatTime = (s) =>
   `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
+// An unfinished game saved in a previous session, restored on load (if any).
+const SAVED = loadGame();
+
 export default function App() {
-  const [gameState, setGameState] = useState('config'); // 'config' | 'loading' | 'playing' | 'success'
+  const [gameState, setGameState] = useState(SAVED ? 'playing' : 'config'); // 'config' | 'loading' | 'playing' | 'success'
   const [authed, setAuthed] = useState(() => isLoggedIn());
   const [authNotice, setAuthNotice] = useState(() =>
     consumeAuthError() ? 'Authorization was cancelled. Connect your account to start playing.' : null
   );
-  const [promptInfo, setPromptInfo] = useState(null);
-  const [aiImageUrl, setAiImageUrl] = useState('');
-  const [answerGrid, setAnswerGrid] = useState([]);
-  const [playerGrid, setPlayerGrid] = useState([]);
-  const [puzzleCrop, setPuzzleCrop] = useState(null);
+  const [promptInfo, setPromptInfo] = useState(SAVED?.meta.promptInfo ?? null);
+  const [aiImageUrl, setAiImageUrl] = useState(SAVED?.image ?? '');
+  const [answerGrid, setAnswerGrid] = useState(SAVED?.meta.answerGrid ?? []);
+  const [playerGrid, setPlayerGrid] = useState(SAVED?.meta.playerGrid ?? []);
+  const [puzzleCrop, setPuzzleCrop] = useState(SAVED?.meta.crop ?? null);
   const [isSolved, setIsSolved] = useState(false);
   const [revealFull, setRevealFull] = useState(false); // success screen: zoomed out to full image?
-  const [hintedCells, setHintedCells] = useState(() => new Set()); // "r-c" of locked hint cells
-  const [hintCount, setHintCount] = useState(0);
-  const [elapsedSec, setElapsedSec] = useState(0);
+  const [hintedCells, setHintedCells] = useState(() => new Set(SAVED?.meta.hinted ?? [])); // "r-c" of locked hint cells
+  const [hintCount, setHintCount] = useState(SAVED?.meta.hintCount ?? 0);
+  const [elapsedSec, setElapsedSec] = useState(SAVED?.meta.elapsedSec ?? 0);
   const [isMuted, setIsMuted] = useState(() => soundManager.isMuted);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState(null);
@@ -36,6 +40,20 @@ export default function App() {
     const id = setInterval(() => setElapsedSec(s => s + 1), 1000);
     return () => clearInterval(id);
   }, [gameState, isSolved]);
+
+  // Persist the in-progress board so the game can be resumed after a reload.
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+    saveMeta({
+      promptInfo,
+      answerGrid,
+      playerGrid,
+      crop: puzzleCrop,
+      hinted: Array.from(hintedCells),
+      hintCount,
+      elapsedSec,
+    });
+  }, [gameState, promptInfo, answerGrid, playerGrid, puzzleCrop, hintedCells, hintCount, elapsedSec]);
 
   const handleToggleMute = () => {
     const nextMuted = soundManager.toggleMute();
@@ -59,15 +77,11 @@ export default function App() {
     setRevealFull(false);
     setPromptInfo({ rawPrompt, fullPrompt, size });
     setStatusMessage('Generating AI image on your Pollinations balance...');
-
-    // Release any previous puzzle image before creating a new one.
-    if (aiImageUrl && aiImageUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(aiImageUrl);
-    }
+    clearGame(); // drop any previous saved game
 
     try {
-      // 1. Generate the image with the user's authorized key (returns a blob URL)
-      const imageUrl = await generateImageBlob(fullPrompt);
+      // 1. Generate the image with the user's authorized key (returns a data URL)
+      const imageUrl = await generateImage(fullPrompt);
       setAiImageUrl(imageUrl);
 
       // 2. Pre-load the image so we can read its pixels
@@ -87,7 +101,8 @@ export default function App() {
       // Initialize player grid with 0 (empty)
       setPlayerGrid(Array(size).fill(null).map(() => Array(size).fill(0)));
 
-      // 4. Play game
+      // 4. Play game (cache the image so the puzzle can be resumed after reload)
+      saveImage(imageUrl);
       setGameState('playing');
       if (!soundManager.isMuted) {
         soundManager.startMusic();
@@ -130,6 +145,7 @@ export default function App() {
     setIsSolved(true);
     soundManager.playVictory();
     soundManager.stopMusic();
+    clearGame(); // finished — no need to resume
 
     // Delay transition to success screen to show the in-board reveal first.
     setTimeout(() => {
@@ -168,6 +184,7 @@ export default function App() {
 
   const handleQuitGame = () => {
     soundManager.stopMusic();
+    clearGame(); // abandoning the game — don't resume it later
     setIsSolved(false);
     setGameState('config');
   };
