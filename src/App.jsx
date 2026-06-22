@@ -1,11 +1,14 @@
-import { useState } from 'react';
-import { Volume2, VolumeX, ArrowLeft, ShieldAlert, LogIn, LogOut } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Volume2, VolumeX, ArrowLeft, ShieldAlert, LogIn, LogOut, Clock } from 'lucide-react';
 import ConfigPanel from './components/ConfigPanel';
 import GameGrid from './components/GameGrid';
 import { login, logout, isLoggedIn, consumeAuthError, generateImageBlob } from './utils/pollinationsApi';
 import { loadImage, binarizeImage, cropStyle } from './utils/imageProcessor';
 import { checkWin } from './logic/picrossLogic';
 import soundManager from './utils/soundManager';
+
+const formatTime = (s) =>
+  `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
 export default function App() {
   const [gameState, setGameState] = useState('config'); // 'config' | 'loading' | 'playing' | 'success'
@@ -22,9 +25,17 @@ export default function App() {
   const [revealFull, setRevealFull] = useState(false); // success screen: zoomed out to full image?
   const [hintedCells, setHintedCells] = useState(() => new Set()); // "r-c" of locked hint cells
   const [hintCount, setHintCount] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
   const [isMuted, setIsMuted] = useState(() => soundManager.isMuted);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState(null);
+
+  // Tick the play timer once per second while a puzzle is in progress.
+  useEffect(() => {
+    if (gameState !== 'playing' || isSolved) return undefined;
+    const id = setInterval(() => setElapsedSec(s => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [gameState, isSolved]);
 
   const handleToggleMute = () => {
     const nextMuted = soundManager.toggleMute();
@@ -72,6 +83,7 @@ export default function App() {
       setIsSolved(false);
       setHintedCells(new Set());
       setHintCount(0);
+      setElapsedSec(0);
       // Initialize player grid with 0 (empty)
       setPlayerGrid(Array(size).fill(null).map(() => Array(size).fill(0)));
 
@@ -241,8 +253,22 @@ export default function App() {
               </div>
               
               <div className="game-controls">
-                <button 
-                  className="icon-btn" 
+                <div
+                  className="timer-chip"
+                  title="Elapsed time"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.35rem',
+                    padding: '0.4rem 0.7rem', borderRadius: '8px',
+                    background: 'rgba(28, 28, 56, 0.6)', border: '1px solid var(--panel-border)',
+                    color: 'var(--accent-color)', fontVariantNumeric: 'tabular-nums', fontSize: '0.85rem',
+                  }}
+                >
+                  <Clock size={14} />
+                  {formatTime(elapsedSec)}
+                </div>
+
+                <button
+                  className="icon-btn"
                   onClick={handleToggleMute}
                   title={isMuted ? 'Unmute Sound & Music' : 'Mute Sound & Music'}
                 >
