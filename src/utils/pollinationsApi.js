@@ -132,27 +132,32 @@ export async function generateImageBlob(prompt) {
   const seed = Math.floor(Math.random() * 1000000);
 
   let url;
-  let init = {};
+  let init;
   if (key) {
     // Logged in: authenticated gateway, watermark removed (nologo).
     const params = new URLSearchParams({ model: 'flux', width: '512', height: '512', seed: String(seed), nologo: 'true' });
     url = `${GEN_BASE}/image/${encodedPrompt}?${params.toString()}`;
     init = { headers: { Authorization: `Bearer ${key}` } };
   } else {
-    // Guest: legacy host authorized with the public App Key (pk_). This is what
-    // lets guests generate without logging in — anonymous requests with no key
-    // are rejected (403). The pk_ key is per-IP rate limited (~1 image/hour),
-    // hence the "guest, rate-limited" tier. `referrer` attributes the traffic.
+    // Guest: anonymous legacy host, identified by the `referrer` query param
+    // (the app's URL). We deliberately do NOT send the pk_ App Key here — it is
+    // rate-limited to ~1 image/IP/hour and quickly returns 403. Referrer-based
+    // anonymous access has more generous limits.
+    //
+    // `referrerPolicy: 'no-referrer'` stops the browser from attaching its own
+    // Referer header on this fetch; otherwise that header overrides our
+    // `?referrer=` param (and a cross-origin fetch's Referer differs from plain
+    // address-bar navigation), which is what triggered the 403.
     const params = new URLSearchParams({
       model: 'flux',
       width: '512',
       height: '512',
       seed: String(seed),
       nologo: 'true',
-      key: APP_KEY,
       referrer: window.location.origin + window.location.pathname,
     });
     url = `${IMAGE_BASE}/prompt/${encodedPrompt}?${params.toString()}`;
+    init = { referrerPolicy: 'no-referrer' };
   }
 
   let res;
@@ -173,7 +178,7 @@ export async function generateImageBlob(prompt) {
     throw new Error(
       key
         ? 'Pollinations is rate limiting requests. Wait a few seconds and try again.'
-        : 'Guest mode is limited to roughly one image per hour per device. Connect your Pollinations account to generate freely on your own balance.'
+        : 'Guest mode is rate-limited. Wait a moment and try again, or connect your Pollinations account to generate freely on your own balance.'
     );
   }
   if (!res.ok) {
