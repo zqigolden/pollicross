@@ -139,15 +139,15 @@ export async function generateImageBlob(prompt) {
     url = `${GEN_BASE}/image/${encodedPrompt}?${params.toString()}`;
     init = { headers: { Authorization: `Bearer ${key}` } };
   } else {
-    // Guest: anonymous legacy host, identified by the `referrer` query param
-    // (the app's URL). We deliberately do NOT send the pk_ App Key here — it is
-    // rate-limited to ~1 image/IP/hour and quickly returns 403. Referrer-based
-    // anonymous access has more generous limits.
+    // Guest: anonymous legacy host. We deliberately do NOT send the pk_ App Key
+    // here — it is rate-limited to ~1 image/IP/hour and quickly returns 403.
     //
-    // `referrerPolicy: 'no-referrer'` stops the browser from attaching its own
-    // Referer header on this fetch; otherwise that header overrides our
-    // `?referrer=` param (and a cross-origin fetch's Referer differs from plain
-    // address-bar navigation), which is what triggered the 403.
+    // Pollinations attributes traffic by referrer DOMAIN (read from the HTTP
+    // `Referer` header), and the app showcase's 24h request metric is grouped by
+    // that domain. So we let the browser send its natural Referer header (no
+    // `referrerPolicy` override) to attribute guest traffic to this app. The
+    // `referrer` query param is kept as a harmless explicit hint / legacy
+    // fallback, though the current gateway reads the header rather than the param.
     const params = new URLSearchParams({
       model: 'flux',
       width: '512',
@@ -157,7 +157,6 @@ export async function generateImageBlob(prompt) {
       referrer: window.location.origin + window.location.pathname,
     });
     url = `${IMAGE_BASE}/prompt/${encodedPrompt}?${params.toString()}`;
-    init = { referrerPolicy: 'no-referrer' };
   }
 
   let res;
