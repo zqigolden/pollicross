@@ -146,8 +146,8 @@ export default function App() {
             ) : (
               <div className="glass-panel" style={{ maxWidth: '500px', width: '100%', textAlign: 'center', padding: '1rem' }}>
                 <p style={{ fontSize: '0.8rem', margin: '0 0 0.75rem 0', opacity: 0.85 }}>
-                  Playing as guest &mdash; free but rate-limited and may include a watermark.
-                  Connect your Pollinations account for faster, watermark-free puzzles on your own balance.
+                  Playing as guest &mdash; free, but limited to about one puzzle per hour.
+                  Connect your Pollinations account to generate freely on your own balance.
                 </p>
                 <button
                   className="icon-btn"

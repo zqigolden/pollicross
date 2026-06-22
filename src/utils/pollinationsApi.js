@@ -139,14 +139,17 @@ export async function generateImageBlob(prompt) {
     url = `${GEN_BASE}/image/${encodedPrompt}?${params.toString()}`;
     init = { headers: { Authorization: `Bearer ${key}` } };
   } else {
-    // Guest: anonymous legacy host. `nologo` requires an account, so it is
-    // omitted here (a watermark may appear). `referrer` attributes the traffic
-    // to this app.
+    // Guest: legacy host authorized with the public App Key (pk_). This is what
+    // lets guests generate without logging in — anonymous requests with no key
+    // are rejected (403). The pk_ key is per-IP rate limited (~1 image/hour),
+    // hence the "guest, rate-limited" tier. `referrer` attributes the traffic.
     const params = new URLSearchParams({
       model: 'flux',
       width: '512',
       height: '512',
       seed: String(seed),
+      nologo: 'true',
+      key: APP_KEY,
       referrer: window.location.origin + window.location.pathname,
     });
     url = `${IMAGE_BASE}/prompt/${encodedPrompt}?${params.toString()}`;
@@ -170,7 +173,7 @@ export async function generateImageBlob(prompt) {
     throw new Error(
       key
         ? 'Pollinations is rate limiting requests. Wait a few seconds and try again.'
-        : 'Guest mode is rate-limited (about one image every 15s). Wait a moment, or connect your Pollinations account for faster, watermark-free generation.'
+        : 'Guest mode is limited to roughly one image per hour per device. Connect your Pollinations account to generate freely on your own balance.'
     );
   }
   if (!res.ok) {
