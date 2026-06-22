@@ -130,6 +130,23 @@ function mask(gray, alpha, threshold, subjectIsDark) {
   return { m, fillRatio: filled / (w * h) };
 }
 
+/** Counts rows + columns that are entirely empty (all 0) or entirely filled (all 1). */
+function countTrivialLines(grid) {
+  const n = grid.length;
+  let trivial = 0;
+  for (let i = 0; i < n; i++) {
+    let rowSum = 0;
+    let colSum = 0;
+    for (let j = 0; j < n; j++) {
+      rowSum += grid[i][j];
+      colSum += grid[j][i];
+    }
+    if (rowSum === 0 || rowSum === n) trivial++;
+    if (colSum === 0 || colSum === n) trivial++;
+  }
+  return trivial;
+}
+
 /**
  * Downscales + auto-crops + binarizes an image into an N x N grid.
  *
@@ -215,7 +232,29 @@ export function binarizeImage(img, size) {
   if (!b || b.valid.length === 0) return { grid: emptyGrid(), crop };
 
   const thB = otsuThreshold(b.valid);
-  const { m: grid, fillRatio } = mask(b.gray, b.alpha, thB, subjectIsDark);
+
+  // The plain Otsu result can still leave many trivial lines (rows/columns that
+  // are entirely empty or entirely filled), which makes a dull puzzle. Sweep
+  // thresholds around Otsu and pick the one with the fewest trivial lines,
+  // staying close to Otsu (and a balanced fill) to keep the image faithful.
+  const candidates = new Set([thB]);
+  for (let t = thB - 48; t <= thB + 48; t += 8) candidates.add(Math.round(t));
+
+  let best = null;
+  for (const t of candidates) {
+    if (t < 1 || t > 254) continue;
+    const { m, fillRatio: fr } = mask(b.gray, b.alpha, t, subjectIsDark);
+    if (fr < 0.1 || fr > 0.9) continue; // skip near-degenerate boards
+    const trivial = countTrivialLines(m);
+    // Trivial-line count dominates; then prefer a balanced fill and a threshold
+    // near Otsu (small deviation).
+    const score = trivial * 100 + Math.abs(fr - 0.45) * 25 + Math.abs(t - thB) * 0.05;
+    if (!best || score < best.score) best = { m, fr, score };
+  }
+
+  const fallback = mask(b.gray, b.alpha, thB, subjectIsDark);
+  const grid = best ? best.m : fallback.m;
+  const fillRatio = best ? best.fr : fallback.fillRatio;
 
   // Guard against degenerate all-empty / all-filled boards.
   if (fillRatio === 0) {
