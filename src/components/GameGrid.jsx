@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Paintbrush, X, HelpCircle } from 'lucide-react';
+import { Paintbrush, X, HelpCircle, Lightbulb } from 'lucide-react';
 import { generateClues } from '../logic/picrossLogic';
 import { cropStyle } from '../utils/imageProcessor';
 
@@ -31,7 +31,8 @@ function getCellsOnLine(r0, c0, r1, c1) {
   return cells;
 }
 
-export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, onCheckWin, isSolved, crop, aiImageUrl }) {
+export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, onCheckWin, onHint, hintCount, hinted, isSolved, crop, aiImageUrl }) {
+  const isHinted = (r, c) => hinted && hinted.has(`${r}-${c}`);
   const [activeTool, setActiveTool] = useState('paint'); // 'paint' or 'cross'
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawType, setDrawType] = useState(null); // The state we are writing (0, 1, or -1)
@@ -54,6 +55,7 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
   // Drag-to-draw mouse handlers
   const handleCellMouseDown = (r, c, e) => {
     e.preventDefault();
+    if (isHinted(r, c)) return; // locked hint cell
     setIsDrawing(true);
     dragStartCell.current = { r, c };
     dragLockAxis.current = null;
@@ -106,9 +108,9 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
     // Interpolate cells from start cell to target cell along the straight line
     const cellsToDraw = getCellsOnLine(rStart, cStart, targetR, targetC);
     
-    // Fill all cells on the straight line
+    // Fill all cells on the straight line (skipping locked hint cells)
     cellsToDraw.forEach(({ r: currR, c: currC }) => {
-      onCellChange(currR, currC, drawType);
+      if (!isHinted(currR, currC)) onCellChange(currR, currC, drawType);
     });
   };
 
@@ -158,16 +160,32 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
         <button
           className={`size-btn ${activeTool === 'cross' ? 'active' : ''}`}
           onClick={() => setActiveTool('cross')}
-          style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '0.5rem', 
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
             padding: '0.6rem 1.5rem',
             borderRadius: '8px'
           }}
         >
           <X size={16} />
           Cross (X)
+        </button>
+        <button
+          className="size-btn"
+          onClick={onHint}
+          disabled={isSolved}
+          title="Reveal one correct cell"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.6rem 1.5rem',
+            borderRadius: '8px',
+          }}
+        >
+          <Lightbulb size={16} />
+          Hint{hintCount > 0 ? ` (${hintCount})` : ''}
         </button>
       </div>
 
@@ -242,11 +260,13 @@ export default function GameGrid({ size, playerGrid, answerGrid, onCellChange, o
             {row.map((cellState, c) => {
               const isBorderRight = c % 5 === 4 && c !== size - 1;
               const isBorderBottom = r % 5 === 4 && r !== size - 1;
+              const hint = isHinted(r, c);
+              const stateClass = hint ? 'hinted' : cellState === 1 ? 'filled' : cellState === -1 ? 'crossed' : '';
 
               return (
                 <div
                   key={`cell-${r}-${c}`}
-                  className={`cell ${cellState === 1 ? 'filled' : cellState === -1 ? 'crossed' : ''} ${isBorderRight ? 'border-right' : ''} ${isBorderBottom ? 'border-bottom' : ''}`}
+                  className={`cell ${stateClass} ${isBorderRight ? 'border-right' : ''} ${isBorderBottom ? 'border-bottom' : ''}`}
                   style={{ width: cellSize, height: cellSize }}
                   onMouseDown={(e) => handleCellMouseDown(r, c, e)}
                   onMouseEnter={() => handleCellMouseEnter(r, c)}

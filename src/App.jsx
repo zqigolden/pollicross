@@ -20,6 +20,8 @@ export default function App() {
   const [puzzleCrop, setPuzzleCrop] = useState(null);
   const [isSolved, setIsSolved] = useState(false);
   const [revealFull, setRevealFull] = useState(false); // success screen: zoomed out to full image?
+  const [hintedCells, setHintedCells] = useState(() => new Set()); // "r-c" of locked hint cells
+  const [hintCount, setHintCount] = useState(0);
   const [isMuted, setIsMuted] = useState(() => soundManager.isMuted);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState(null);
@@ -68,6 +70,8 @@ export default function App() {
       setAnswerGrid(binaryMatrix);
       setPuzzleCrop(crop);
       setIsSolved(false);
+      setHintedCells(new Set());
+      setHintCount(0);
       // Initialize player grid with 0 (empty)
       setPlayerGrid(Array(size).fill(null).map(() => Array(size).fill(0)));
 
@@ -89,6 +93,8 @@ export default function App() {
   };
 
   const handleCellChange = (r, c, val) => {
+    // Hinted cells are locked — they can't be cleared or crossed.
+    if (hintedCells.has(`${r}-${c}`)) return;
     setPlayerGrid(prevGrid => {
       // Check if state is actually changing to prevent redundant sound plays
       if (prevGrid[r][c] === val) return prevGrid;
@@ -108,22 +114,44 @@ export default function App() {
     });
   };
 
-  const handleCheckWin = () => {
-    if (checkWin(playerGrid, answerGrid)) {
-      setIsSolved(true);
-      soundManager.playVictory();
-      soundManager.stopMusic();
+  const triggerWin = () => {
+    setIsSolved(true);
+    soundManager.playVictory();
+    soundManager.stopMusic();
 
-      // Delay transition to success screen to show the in-board reveal first.
-      setTimeout(() => {
-        setRevealFull(false); // start framed on the solved crop...
-        setGameState('success');
-        // ...then, once committed, zoom out to the full generated image.
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => setRevealFull(true))
-        );
-      }, 2500);
+    // Delay transition to success screen to show the in-board reveal first.
+    setTimeout(() => {
+      setRevealFull(false); // start framed on the solved crop...
+      setGameState('success');
+      // ...then, once committed, zoom out to the full generated image.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => setRevealFull(true))
+      );
+    }, 2500);
+  };
+
+  const handleCheckWin = () => {
+    if (checkWin(playerGrid, answerGrid)) triggerWin();
+  };
+
+  const handleHint = () => {
+    // Collect cells that should be filled but aren't yet.
+    const candidates = [];
+    for (let r = 0; r < answerGrid.length; r++) {
+      for (let c = 0; c < answerGrid.length; c++) {
+        if (answerGrid[r][c] === 1 && playerGrid[r][c] !== 1) candidates.push([r, c]);
+      }
     }
+    if (candidates.length === 0) return;
+
+    const [r, c] = candidates[Math.floor(Math.random() * candidates.length)];
+    const newGrid = playerGrid.map((row, ri) => row.map((v, ci) => (ri === r && ci === c ? 1 : v)));
+    setPlayerGrid(newGrid);
+    setHintedCells(prev => new Set(prev).add(`${r}-${c}`));
+    setHintCount(h => h + 1);
+    soundManager.playClick();
+
+    if (checkWin(newGrid, answerGrid)) triggerWin();
   };
 
   const handleQuitGame = () => {
@@ -237,6 +265,9 @@ export default function App() {
               answerGrid={answerGrid}
               onCellChange={handleCellChange}
               onCheckWin={handleCheckWin}
+              onHint={handleHint}
+              hintCount={hintCount}
+              hinted={hintedCells}
               isSolved={isSolved}
               crop={puzzleCrop}
               aiImageUrl={aiImageUrl}
